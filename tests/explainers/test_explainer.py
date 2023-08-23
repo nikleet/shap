@@ -2,6 +2,7 @@
 """
 
 import pytest
+
 import shap
 
 
@@ -19,7 +20,7 @@ def test_wrapping_for_text_to_text_teacher_forcing_model():
     wrapped_model = shap.models.TeacherForcing(f, similarity_model=model, similarity_tokenizer=tokenizer)
     masker = shap.maskers.Text(tokenizer, mask_token="...")
 
-    explainer = shap.Explainer(wrapped_model, masker)
+    explainer = shap.Explainer(wrapped_model, masker, seed=1)
 
     assert shap.utils.safe_isinstance(explainer.masker, "shap.maskers.OutputComposite")
 
@@ -34,6 +35,6 @@ def test_wrapping_for_topk_lm_model():
     wrapped_model = shap.models.TopKLM(model, tokenizer)
     masker = shap.maskers.Text(tokenizer, mask_token="...")
 
-    explainer = shap.Explainer(wrapped_model, masker)
+    explainer = shap.Explainer(wrapped_model, masker, seed=1)
 
     assert shap.utils.safe_isinstance(explainer.masker, "shap.maskers.FixedComposite")

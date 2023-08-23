@@ -1,11 +1,14 @@
 import logging
-import pandas as pd
+
 import numpy as np
-from numba import jit
+import pandas as pd
+from numba import njit
+
 from .. import utils
-from ..utils import safe_isinstance, MaskedModel
+from .._serializable import Deserializer, Serializer
+from ..utils import MaskedModel, safe_isinstance
+from ..utils._exceptions import DimensionError, InvalidClusteringError
 from ._masker import Masker
-from .._serializable import Serializer, Deserializer
 
 log = logging.getLogger('shap')
 
@@ -33,10 +36,10 @@ class Tabular(Masker):
             The distance metric to use for creating the clustering of the features. The
             distance function can be any valid scipy.spatial.distance.pdist's metric argument.
             However we suggest using 'correlation' in most cases. The full list of options is
-            ‘braycurtis’, ‘canberra’, ‘chebyshev’, ‘cityblock’, ‘correlation’, ‘cosine’, ‘dice’,
-            ‘euclidean’, ‘hamming’, ‘jaccard’, ‘jensenshannon’, ‘kulsinski’, ‘mahalanobis’,
-            ‘matching’, ‘minkowski’, ‘rogerstanimoto’, ‘russellrao’, ‘seuclidean’,
-            ‘sokalmichener’, ‘sokalsneath’, ‘sqeuclidean’, ‘yule’. These are all
+            `braycurtis`, `canberra`, `chebyshev`, `cityblock`, `correlation`, `cosine`, `dice`,
+            `euclidean`, `hamming`, `jaccard`, `jensenshannon`, `kulsinski`, `mahalanobis`,
+            `matching`, `minkowski`, `rogerstanimoto`, `russellrao`, `seuclidean`,
+            `sokalmichener`, `sokalsneath`, `sqeuclidean`, `yule`. These are all
             the options from scipy.spatial.distance.pdist's metric argument.
         """
 
@@ -70,36 +73,37 @@ class Tabular(Masker):
             elif safe_isinstance(clustering, "numpy.ndarray"):
                 self.clustering = clustering
             else:
-                raise Exception(
+                raise InvalidClusteringError(
                     "Unknown clustering given! Make sure you pass a distance metric as a string, or a clustering as a numpy.ndarray."
                 )
         else:
             self.clustering = None
 
-        # self._last_mask = np.zeros(self.data.shape[1], dtype=np.bool)
+        # self._last_mask = np.zeros(self.data.shape[1], dtype=bool)
         self._masked_data = data.copy()
-        self._last_mask = np.zeros(data.shape[1], dtype=np.bool)
+        self._last_mask = np.zeros(data.shape[1], dtype=bool)
         self.shape = self.data.shape
         self.supports_delta_masking = True
         # self._last_x = None
-        # self._data_variance = np.ones(self.data.shape, dtype=np.bool)
+        # self._data_variance = np.ones(self.data.shape, dtype=bool)
 
         # this is property that allows callers to check what rows actually changed since last time.
-        # self.changed_rows = np.ones(self.data.shape[0], dtype=np.bool)
+        # self.changed_rows = np.ones(self.data.shape[0], dtype=bool)
 
     def __call__(self, mask, x):
+        mask = self._standardize_mask(mask, x)
 
         # make sure we are given a single sample
         if len(x.shape) != 1 or x.shape[0] != self.data.shape[1]:
-            raise Exception("The input passed for tabular masking does not match the background data shape!")
+            raise DimensionError("The input passed for tabular masking does not match the background data shape!")
 
         # if mask is an array of integers then we are doing delta masking
         if np.issubdtype(mask.dtype, np.integer):
 
             variants = ~self.invariants(x)
-            curr_delta_inds = np.zeros(len(mask), dtype=np.int)
+            curr_delta_inds = np.zeros(len(mask), dtype=int)
             num_masks = (mask >= 0).sum()
-            varying_rows_out = np.zeros((num_masks, self.shape[0]), dtype=np.bool)
+            varying_rows_out = np.zeros((num_masks, self.shape[0]), dtype=bool)
             masked_inputs_out = np.zeros((num_masks * self.shape[0], self.shape[1]))
             self._last_mask[:] = False
             self._masked_data[:] = self.data
@@ -120,7 +124,7 @@ class Tabular(Masker):
         if self.output_dataframe:
             return pd.DataFrame(self._masked_data, columns=self.feature_names)
 
-        return self._masked_data
+        return (self._masked_data,)
 
     # def reset_delta_masking(self):
     #     """ This resets the masker back to all zeros when delta masking.
@@ -140,7 +144,7 @@ class Tabular(Masker):
 
         # make sure we got valid data
         if x.shape != self.data.shape[1:]:
-            raise Exception(
+            raise DimensionError(
                 "The passed data does not match the background shape expected by the masker! The data of shape " + \
                 str(x.shape) + " was passed while the masker expected data of shape " + str(self.data.shape[1:]) + "."
             )
@@ -152,7 +156,7 @@ class Tabular(Masker):
         """
         super().save(out_file)
 
-        # Increment the verison number when the encoding changes!
+        # Increment the version number when the encoding changes!
         with Serializer(out_file, "shap.maskers.Tabular", version=0) as s:
 
             # save the data in the format it was given to us
@@ -180,7 +184,7 @@ class Tabular(Masker):
             kwargs["clustering"] = s.load("clustering")
         return kwargs
 
-@jit
+@njit
 def _single_delta_mask(dind, masked_inputs, last_mask, data, x, noop_code):
     if dind == noop_code:
         pass
@@ -191,7 +195,7 @@ def _single_delta_mask(dind, masked_inputs, last_mask, data, x, noop_code):
         masked_inputs[:, dind] = x[dind]
         last_mask[dind] = True
 
-@jit
+@njit
 def _delta_masking(masks, x, curr_delta_inds, varying_rows_out,
                    masked_inputs_tmp, last_mask, data, variants, masked_inputs_out, noop_code):
     """ Implements the special (high speed) delta masking API that only flips the positions we need to.
@@ -263,7 +267,7 @@ class Independent(Tabular):
 class Partition(Tabular):
     """ This masks out tabular features by integrating over the given background dataset.
 
-    Unlike Independent, Partition respects a hierarchial structure of the data.
+    Unlike Independent, Partition respects a hierarchical structure of the data.
     """
 
     def __init__(self, data, max_samples=100, clustering="correlation"):
@@ -285,10 +289,10 @@ class Partition(Tabular):
             If a string, then this is the distance metric to use for creating the clustering of
             the features. The distance function can be any valid scipy.spatial.distance.pdist's metric
             argument. However we suggest using 'correlation' in most cases. The full list of options is
-            ‘braycurtis’, ‘canberra’, ‘chebyshev’, ‘cityblock’, ‘correlation’, ‘cosine’, ‘dice’,
-            ‘euclidean’, ‘hamming’, ‘jaccard’, ‘jensenshannon’, ‘kulsinski’, ‘mahalanobis’,
-            ‘matching’, ‘minkowski’, ‘rogerstanimoto’, ‘russellrao’, ‘seuclidean’,
-            ‘sokalmichener’, ‘sokalsneath’, ‘sqeuclidean’, ‘yule’. These are all
+            `braycurtis`, `canberra`, `chebyshev`, `cityblock`, `correlation`, `cosine`, `dice`,
+            `euclidean`, `hamming`, `jaccard`, `jensenshannon`, `kulsinski`, `mahalanobis`,
+            `matching`, `minkowski`, `rogerstanimoto`, `russellrao`, `seuclidean`,
+            `sokalmichener`, `sokalsneath`, `sqeuclidean`, `yule`. These are all
             the options from scipy.spatial.distance.pdist's metric argument.
             If an array, then this is assumed to be the clustering of the features.
         """

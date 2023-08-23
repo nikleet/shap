@@ -1,5 +1,5 @@
+from .._serializable import Deserializer, Serializer
 from ._masker import Masker
-from .._serializable import Serializer, Deserializer
 
 
 class OutputComposite(Masker):
@@ -26,9 +26,9 @@ class OutputComposite(Masker):
         """
         self.masker = masker
         self.model = model
-        # define attributes to be dynamically set
-        masker_attributes = ["shape", "invariants", "clustering", "data_transform", "mask_shapes", "feature_names"]
-        # set attributes dynamically
+
+        # copy attributes from the masker we are wrapping
+        masker_attributes = ["shape", "invariants", "clustering", "data_transform", "mask_shapes", "feature_names", "text_data", "image_data"]
         for masker_attribute in masker_attributes:
             if getattr(self.masker, masker_attribute, None) is not None:
                 setattr(self, masker_attribute, getattr(self.masker, masker_attribute))
@@ -51,7 +51,7 @@ class OutputComposite(Masker):
         """
         super().save(out_file)
 
-        # Increment the verison number when the encoding changes!
+        # Increment the version number when the encoding changes!
         with Serializer(out_file, "shap.maskers.OutputComposite", version=0) as s:
             s.save("masker", self.masker)
             s.save("model", self.model)
