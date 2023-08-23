@@ -1,5 +1,6 @@
 import numpy as np
-import scipy as sp
+import scipy.special
+
 from ._model import Model
 
 
@@ -11,7 +12,7 @@ class TransformersPipeline(Model):
     tensor formats.
     """
 
-    def __init__(self, pipeline, rescale_to_logits=True):
+    def __init__(self, pipeline, rescale_to_logits=False):
         """ Build a new model by wrapping the given pipeline object.
         """
         super().__init__(pipeline) # the pipeline becomes our inner_model
@@ -32,5 +33,5 @@ class TransformersPipeline(Model):
             if not isinstance(val, list):
                 val = [val]
             for obj in val:
-                output[i, self.label2id[obj["label"]]] = sp.special.logit(obj["score"]) if self.rescale_to_logits else obj["score"]
+                output[i, self.label2id[obj["label"]]] = scipy.special.logit(obj["score"]) if self.rescale_to_logits else obj["score"]
         return output

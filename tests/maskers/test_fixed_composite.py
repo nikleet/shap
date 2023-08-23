@@ -2,9 +2,12 @@
 """
 
 import tempfile
-import pytest
+
 import numpy as np
+import pytest
+
 import shap
+
 
 @pytest.mark.skip(reason="fails on travis and I don't know why yet...Ryan might need to take a look since this API will change soon anyway")
 def test_fixed_composite_masker_call():
@@ -36,16 +39,14 @@ def test_serialization_fixedcomposite_masker():
     underlying_masker = shap.maskers.Text(tokenizer)
     original_masker = shap.maskers.FixedComposite(underlying_masker)
 
-    temp_serialization_file = tempfile.TemporaryFile()
+    with tempfile.TemporaryFile() as temp_serialization_file:
 
-    original_masker.save(temp_serialization_file)
+        original_masker.save(temp_serialization_file)
 
-    temp_serialization_file.seek(0)
+        temp_serialization_file.seek(0)
 
-    # deserialize masker
-    new_masker = shap.maskers.FixedComposite.load(temp_serialization_file)
-
-    temp_serialization_file.close()
+        # deserialize masker
+        new_masker = shap.maskers.FixedComposite.load(temp_serialization_file)
 
     test_text = "I ate a Cannoli"
     test_input_mask = np.array([True, False, True, True, False, True, True, True])

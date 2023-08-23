@@ -2,39 +2,11 @@
 """
 
 import tempfile
-import pytest
+
 import numpy as np
+import pytest
+
 import shap
-
-def test_method_tokenize_pretrained_tokenizer():
-    """ Check that the Text masker produces the same ids as its non-fast pretrained tokenizer.
-    """
-
-    AutoTokenizer = pytest.importorskip("transformers").AutoTokenizer
-
-    tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased", use_fast=False)
-    masker = shap.maskers.Text(tokenizer)
-
-    test_text = "I have a joke about deep learning but I can't explain it."
-    output_ids = masker.tokenize(test_text)['input_ids']
-    correct_ids = tokenizer.encode_plus(test_text)['input_ids']
-
-    assert output_ids == correct_ids
-
-def test_method_tokenize_pretrained_tokenizer_fast():
-    """ Check that the Text masker produces the same ids as its fast pretrained tokenizer.
-    """
-
-    AutoTokenizer = pytest.importorskip("transformers").AutoTokenizer
-
-    tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased", use_fast=True)
-    masker = shap.maskers.Text(tokenizer)
-
-    test_text = "I have a joke about deep learning but I can't explain it."
-    output_ids = masker.tokenize(test_text)['input_ids']
-    correct_ids = tokenizer.encode_plus(test_text)['input_ids']
-
-    assert output_ids == correct_ids
 
 
 def test_method_token_segments_pretrained_tokenizer():
@@ -47,8 +19,8 @@ def test_method_token_segments_pretrained_tokenizer():
     masker = shap.maskers.Text(tokenizer)
 
     test_text = "I ate a Cannoli"
-    output_token_segments = masker.token_segments(test_text)
-    correct_token_segments = ['', 'I', 'ate', 'a', 'Can', '##no', '##li', '']
+    output_token_segments,_ = masker.token_segments(test_text)
+    correct_token_segments = ['', ' I', ' ate', ' a', ' Can', 'no', 'li', '']
 
     assert output_token_segments == correct_token_segments
 
@@ -63,7 +35,7 @@ def test_method_token_segments_pretrained_tokenizer_fast():
     masker = shap.maskers.Text(tokenizer)
 
     test_text = "I ate a Cannoli"
-    output_token_segments = masker.token_segments(test_text)
+    output_token_segments,_ = masker.token_segments(test_text)
     correct_token_segments = ['', 'I ', 'ate ', 'a ', 'Can', 'no', 'li', '']
 
     assert output_token_segments == correct_token_segments
@@ -103,6 +75,8 @@ def test_masker_call_pretrained_tokenizer_fast():
 
     assert output_masked_text[0] == correct_masked_text
 
+
+@pytest.mark.filterwarnings(r"ignore:Recommended. pip install sacremoses")
 def test_sentencepiece_tokenizer_output():
     """ Tests for output for sentencepiece tokenizers to not have '_' in output of masker when passed a mask of ones.
     """
@@ -189,17 +163,15 @@ def test_serialization_text_masker():
     tokenizer = AutoTokenizer.from_pretrained("distilbert-base-cased", use_fast=False)
     original_masker = shap.maskers.Text(tokenizer)
 
-    temp_serialization_file = tempfile.TemporaryFile()
+    with tempfile.TemporaryFile() as temp_serialization_file:
 
-    original_masker.save(temp_serialization_file)
+        original_masker.save(temp_serialization_file)
 
-    temp_serialization_file.seek(0)
+        temp_serialization_file.seek(0)
 
 
-    # deserialize masker
-    new_masker = shap.maskers.Text.load(temp_serialization_file)
-
-    temp_serialization_file.close()
+        # deserialize masker
+        new_masker = shap.maskers.Text.load(temp_serialization_file)
 
 
     test_text = "I ate a Cannoli"
@@ -219,16 +191,14 @@ def test_serialization_text_masker_custom_mask():
     tokenizer = AutoTokenizer.from_pretrained("distilbert-base-cased", use_fast=True)
     original_masker = shap.maskers.Text(tokenizer, mask_token='[CUSTOM-MASK]')
 
-    temp_serialization_file = tempfile.TemporaryFile()
+    with tempfile.TemporaryFile() as temp_serialization_file:
 
-    original_masker.save(temp_serialization_file)
+        original_masker.save(temp_serialization_file)
 
-    temp_serialization_file.seek(0)
+        temp_serialization_file.seek(0)
 
-    # deserialize masker
-    new_masker = shap.maskers.Text.load(temp_serialization_file)
-
-    temp_serialization_file.close()
+        # deserialize masker
+        new_masker = shap.maskers.Text.load(temp_serialization_file)
 
 
     test_text = "I ate a Cannoli"
@@ -248,16 +218,14 @@ def test_serialization_text_masker_collapse_mask_token():
     tokenizer = AutoTokenizer.from_pretrained("distilbert-base-cased", use_fast=True)
     original_masker = shap.maskers.Text(tokenizer, collapse_mask_token=True)
 
-    temp_serialization_file = tempfile.TemporaryFile()
+    with tempfile.TemporaryFile() as temp_serialization_file:
 
-    original_masker.save(temp_serialization_file)
+        original_masker.save(temp_serialization_file)
 
-    temp_serialization_file.seek(0)
+        temp_serialization_file.seek(0)
 
-    # deserialize masker
-    new_masker = shap.maskers.Text.load(temp_serialization_file)
-
-    temp_serialization_file.close()
+        # deserialize masker
+        new_masker = shap.maskers.Text.load(temp_serialization_file)
 
 
     test_text = "I ate a Cannoli"

@@ -1,20 +1,22 @@
-import numpy as np
-import warnings
 import json
-import numpy as np
-from ..utils import ordinal_str
 import random
 import string
+from typing import Optional
+
+import matplotlib.pyplot as pl
+import numpy as np
+from matplotlib.colors import Colormap
+
 try:
-    import matplotlib.pyplot as pl
+    from IPython.display import HTML, display
+    have_ipython = True
 except ImportError:
-    warnings.warn("matplotlib could not be loaded!")
-try:
-    from IPython.core.display import display, HTML
-except ImportError:
-    warnings.warn("IPython could not be loaded!")
-from . import colors
+    have_ipython = False
+
+from .._explanation import Explanation
+from ..utils import ordinal_str
 from ..utils._legacy import kmeans
+from . import colors
 
 # .shape[0] messes up pylint a lot here
 # pylint: disable=unsubscriptable-object
@@ -23,20 +25,37 @@ from ..utils._legacy import kmeans
 
 def image(shap_values, pixel_values=None, labels=None, width=20, aspect=0.2, hspace=0.2, labelpad=None, show=True, plotchannels=[0]):
     """ Plots SHAP values for image inputs.
+    def image(shap_values: Explanation or np.ndarray,
+            pixel_values: Optional[np.ndarray] = None,
+            labels: Optional[list or np.ndarray] = None,
+            true_labels: Optional[list] = None,
+            width: Optional[int] = 20,
+            aspect: Optional[float] = 0.2,
+            hspace: Optional[float] = 0.2,
+            labelpad: Optional[float] = None,
+            cmap: Optional[str or Colormap] = colors.red_transparent_blue,
+            show: Optional[bool] = True):
+    Plots SHAP values for image inputs.
 
     Parameters
     ----------
     shap_values : [numpy.array]
-        List of arrays of SHAP values. Each array has the shap (# samples x width x height x channels), and the
-        length of the list is equal to the number of model outputs that are being explained.
+        List of arrays of SHAP values. Each array has the shape
+        (# samples x width x height x channels), and the
+        length of the list is equal to the number of model outputs that are being
+        explained.
 
     pixel_values : numpy.array
-        Matrix of pixel values (# samples x width x height x channels) for each image. It should be the same
-        shape as each array in the shap_values list of arrays.
+        Matrix of pixel values (# samples x width x height x channels) for each image.
+        It should be the same
+        shape as each array in the ``shap_values`` list of arrays.
 
-    labels : list
-        List of names for each of the model outputs that are being explained. This list should be the same length
-        as the shap_values list.
+    labels : list or np.ndarray
+        List or ``np.ndarray`` (# samples x top_k classes) of names for each of the
+        model outputs that are being explained.
+
+    true_labels: list
+        List of a true image labels to plot.
 
     width : float
         The width of the produced matplotlib plot.
@@ -45,19 +64,28 @@ def image(shap_values, pixel_values=None, labels=None, width=20, aspect=0.2, hsp
         How much padding to use around the model output labels.
 
     show : bool
-        Whether matplotlib.pyplot.show() is called before returning. Setting this to False allows the plot
+        Whether ``matplotlib.pyplot.show()`` is called before returning.
+        Setting this to ``False`` allows the plot
         to be customized further after it has been created.
     plotchannels : None or list
         List of image channel indices to plot separately. If None, will sum all bands for a single plot.
+
+    Examples
+    --------
+
+    See `image plot examples <https://shap.readthedocs.io/en/latest/example_notebooks/api_examples/plots/image.html>`_.
+
     """
 
     # support passing an explanation object
     if str(type(shap_values)).endswith("Explanation'>"):
         shap_exp = shap_values
-        feature_names = [shap_exp.feature_names]
-        ind = 0
-        if len(shap_exp.base_values.shape) == 2:
+        # feature_names = [shap_exp.feature_names]
+        # ind = 0
+        if len(shap_exp.output_dims) == 1:
             shap_values = [shap_exp.values[..., i] for i in range(shap_exp.values.shape[-1])]
+        elif len(shap_exp.output_dims) == 0:
+            shap_values = shap_exp.values
         else:
             raise Exception("Number of outputs needs to have support added!! (probably a simple fix)")
         if pixel_values is None:
@@ -65,9 +93,9 @@ def image(shap_values, pixel_values=None, labels=None, width=20, aspect=0.2, hsp
         if labels is None:
             labels = shap_exp.output_names
 
-    multi_output = True
-    if type(shap_values) != list:
-        multi_output = False
+    # multi_output = True
+    if not isinstance(shap_values, list):
+        # multi_output = False
         shap_values = [shap_values]
 
     # make sure the number of channels to plot is <= number of channels present
@@ -77,14 +105,27 @@ def image(shap_values, pixel_values=None, labels=None, width=20, aspect=0.2, hsp
     else:
         nchannels = 1
 
+    # ==============================================================
+    # NOT SURE ABOUT THIS - REVIEW
     # make sure labels
+    if len(shap_values[0].shape) == 3:
+        shap_values = [v.reshape(1, *v.shape) for v in shap_values]
+        pixel_values = pixel_values.reshape(1, *pixel_values.shape)
+    # ==============================================================
+    # labels: (rows (images) x columns (top_k classes) )
     if labels is not None:
-        labels = np.array(labels)
-        assert labels.shape[0] == shap_values[0].shape[0], "Labels must have same row count as shap_values arrays!"
-        if multi_output:
-            assert labels.shape[1] == len(shap_values), "Labels must have a column for each output in shap_values!"
-        else:
-            assert len(labels.shape) == 1, "Labels must be a vector for single output shap_values."
+        if isinstance(labels, list):
+            labels = np.array(labels).reshape(1, -1)
+
+    # if labels is not None:
+    #     labels = np.array(labels)
+    #     if labels.shape[0] != shap_values[0].shape[0] and labels.shape[0] == len(shap_values):
+    #         labels = np.tile(np.array([labels]), shap_values[0].shape[0])
+    #     assert labels.shape[0] == shap_values[0].shape[0], "Labels must have same row count as shap_values arrays!"
+    #     if multi_output:
+    #         assert labels.shape[1] == len(shap_values), "Labels must have a column for each output in shap_values!"
+    #     else:
+    #         assert len(labels[0].shape) == 1, "Labels must be a vector for single output shap_values."
 
     label_kwargs = {} if labelpad is None else {'pad': labelpad}
 
@@ -95,28 +136,31 @@ def image(shap_values, pixel_values=None, labels=None, width=20, aspect=0.2, hsp
         fig_size *= width / fig_size[0]
     fig, axes = pl.subplots(nrows=x.shape[0] * nchannels, ncols=len(shap_values) + 1, figsize=fig_size)
     if len(axes.shape) == 1:
-        axes = axes.reshape(1,axes.size)
+        axes = axes.reshape(1, axes.size)
     for row in range(x.shape[0]):
         x_curr = x[row].copy()
 
         # make sure we have a 2D array for grayscale
         if len(x_curr.shape) == 3 and x_curr.shape[2] == 1:
             x_curr = x_curr.reshape(x_curr.shape[:2])
-        if x_curr.max() > 1:
-            x_curr /= 255.
+
+        # if x_curr.max() > 1:
+        #     x_curr /= 255.
 
         # get a grayscale version of the image
         if len(x_curr.shape) == 3 and x_curr.shape[2] == 3:
-            x_curr_gray = (0.2989 * x_curr[:,:,0] + 0.5870 * x_curr[:,:,1] + 0.1140 * x_curr[:,:,2]) # rgb to gray
+            x_curr_gray = (
+                    0.2989 * x_curr[:, :, 0] + 0.5870 * x_curr[:, :, 1] + 0.1140 * x_curr[:, :, 2])  # rgb to gray
             x_curr_disp = x_curr
         elif len(x_curr.shape) == 3:
             x_curr_gray = x_curr.mean(2)
 
             # for non-RGB multi-channel data we show an RGB image where each of the three channels is a scaled k-mean center
-            flat_vals = x_curr.reshape([x_curr.shape[0]*x_curr.shape[1], x_curr.shape[2]]).T
+            flat_vals = x_curr.reshape([x_curr.shape[0] * x_curr.shape[1], x_curr.shape[2]]).T
             flat_vals = (flat_vals.T - flat_vals.mean(1)).T
             means = kmeans(flat_vals, 3, round_values=False).data.T.reshape([x_curr.shape[0], x_curr.shape[1], 3])
-            x_curr_disp = (means - np.percentile(means, 0.5, (0,1))) / (np.percentile(means, 99.5, (0,1)) - np.percentile(means, 1, (0,1)))
+            x_curr_disp = (means - np.percentile(means, 0.5, (0, 1))) / (
+                    np.percentile(means, 99.5, (0, 1)) - np.percentile(means, 1, (0, 1)))
             x_curr_disp[x_curr_disp > 1] = 1
             x_curr_disp[x_curr_disp < 0] = 0
         else:
@@ -127,7 +171,11 @@ def image(shap_values, pixel_values=None, labels=None, width=20, aspect=0.2, hsp
         axes[row*nchannels,0].axis('off')
         for c in range(1, nchannels):
             axes[row*nchannels+c, 0].set_visible(False)
-
+        # REVIEW
+        # axes[row, 0].imshow(x_curr_disp, cmap=pl.get_cmap('gray'))
+        # if true_labels:
+        #     axes[row, 0].set_title(true_labels[row], **label_kwargs)
+        # axes[row, 0].axis('off')
         if len(shap_values[0][row].shape) == 2:
             abs_vals = np.stack([np.abs(shap_values[i]) for i in range(len(shap_values))], 0).flatten()
         else:
@@ -153,7 +201,8 @@ def image(shap_values, pixel_values=None, labels=None, width=20, aspect=0.2, hsp
         fig.tight_layout()
     else:
         fig.subplots_adjust(hspace=hspace)
-    cb = fig.colorbar(im, ax=np.ravel(axes).tolist(), label="SHAP value", orientation="horizontal", aspect=fig_size[0]/aspect)
+    cb = fig.colorbar(im, ax=np.ravel(axes).tolist(), label="SHAP value", orientation="horizontal",
+                      aspect=fig_size[0] / aspect)
     cb.outline.set_visible(False)
     if show:
         pl.show()
@@ -169,6 +218,12 @@ def image_to_text(shap_values):
         for each sample
 
     """
+    if not have_ipython:
+        msg = (
+            "IPython is required for this function but is not installed."
+            " Fix this with `pip install ipython`."
+        )
+        raise ImportError(msg)
 
     if len(shap_values.values.shape) == 5:
         for i in range(shap_values.values.shape[0]):
@@ -176,7 +231,6 @@ def image_to_text(shap_values):
             image_to_text(shap_values[i])
 
         return
-
 
     uuid = ''.join(random.choices(string.ascii_lowercase, k=20))
 
@@ -188,18 +242,18 @@ def image_to_text(shap_values):
 
     for i in range(model_output.shape[0]):
         output_text_html += "<div style='display:inline; text-align:center;'>" \
-                + f"<div id='{uuid}_output_flat_value_label_"+ str(i) +"'" \
-                + "style='display:none;color: #999; padding-top: 0px; font-size:12px;'>" \
-                + "</div>" \
-                + f"<div id='{uuid}_output_flat_token_"+ str(i) +"'" \
-                + "style='display: inline; background:transparent; border-radius: 3px; padding: 0px;cursor: default;cursor: pointer;'" \
-                + f"onmouseover=\"onMouseHoverFlat_{uuid}(this.id)\" " \
-                + f"onmouseout=\"onMouseOutFlat_{uuid}(this.id)\" " \
-                + f"onclick=\"onMouseClickFlat_{uuid}(this.id)\" " \
-                + ">" \
-                + model_output[i].replace("<", "&lt;").replace(">", "&gt;").replace(' ##', '').replace('▁', '').replace('Ġ','') \
-                + " </div>" \
-                + "</div>"
+                            + f"<div id='{uuid}_output_flat_value_label_"+ str(i) +"'" \
+                            + "style='display:none;color: #999; padding-top: 0px; font-size:12px;'>" \
+                            + "</div>" \
+                            + f"<div id='{uuid}_output_flat_token_"+ str(i) +"'" \
+                            + "style='display: inline; background:transparent; border-radius: 3px; padding: 0px;cursor: default;cursor: pointer;'" \
+                            + f"onmouseover=\"onMouseHoverFlat_{uuid}(this.id)\" " \
+                            + f"onmouseout=\"onMouseOutFlat_{uuid}(this.id)\" " \
+                            + f"onclick=\"onMouseClickFlat_{uuid}(this.id)\" " \
+                            + ">" \
+                            + model_output[i].replace("<", "&lt;").replace(">", "&gt;").replace(' ##', '').replace('▁', '').replace('Ġ','') \
+                            + " </div>" \
+                            + "</div>"
 
     # computing gray scale images
     image_data = shap_values.data
@@ -208,13 +262,13 @@ def image_to_text(shap_values):
 
     # computing gray scale image
     image_data_gray_scale = np.ones((image_height, image_width, 4)) * 255 * 0.5
-    image_data_gray_scale[:,:,0] = np.mean(image_data,axis=2).astype(int)
-    image_data_gray_scale[:,:,1] = image_data_gray_scale[:,:,0]
-    image_data_gray_scale[:,:,2] = image_data_gray_scale[:,:,0]
+    image_data_gray_scale[:, :, 0] = np.mean(image_data, axis=2).astype(int)
+    image_data_gray_scale[:, :, 1] = image_data_gray_scale[:, :, 0]
+    image_data_gray_scale[:, :, 2] = image_data_gray_scale[:, :, 0]
 
     # computing shap color values for every pixel and for every output token
 
-    shap_values_color_maps = shap_values.values[:,:,0,:]
+    shap_values_color_maps = shap_values.values[:, :, 0, :]
     max_val = np.nanpercentile(np.abs(shap_values.values), 99.9)
 
     shap_values_color_dict = {}
@@ -273,8 +327,6 @@ def image_to_text(shap_values):
         </div>
 
     """
-
-
 
     image_viz_script = f"""
         <script>

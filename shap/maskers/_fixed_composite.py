@@ -1,6 +1,7 @@
 import numpy as np
+
+from .._serializable import Deserializer, Serializer
 from ._masker import Masker
-from .._serializable import Serializer, Deserializer
 
 
 class FixedComposite(Masker):
@@ -21,9 +22,9 @@ class FixedComposite(Masker):
             A tuple consisting of the masked input using the underlying masker appended with the original args in a list.
         """
         self.masker = masker
-        # define attributes to be dynamically set
-        masker_attributes = ["shape", "invariants", "clustering", "data_transform", "mask_shapes", "feature_names"]
-        # set attributes dynamically
+
+        # copy attributes from the masker we are wrapping
+        masker_attributes = ["shape", "invariants", "clustering", "data_transform", "mask_shapes", "feature_names", "text_data", "image_data"]
         for masker_attribute in masker_attributes:
             if getattr(self.masker, masker_attribute, None) is not None:
                 setattr(self, masker_attribute, getattr(self.masker, masker_attribute))
@@ -45,7 +46,7 @@ class FixedComposite(Masker):
         """
         super().save(out_file)
 
-        # Increment the verison number when the encoding changes!
+        # Increment the version number when the encoding changes!
         with Serializer(out_file, "shap.maskers.FixedComposite", version=0) as s:
             s.save("masker", self.masker)
 
